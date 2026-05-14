@@ -1,0 +1,77 @@
+# =========================
+# Python virtual environments
+# =========================
+venv/
+.venv/
+env/
+ENV/
+*/venv/
+*/.venv/
+
+# =========================
+# Python cache
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+
+# =========================
+# System files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# IDE files
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Large video files
+# =========================
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+
+# =========================
+# Large compressed files
+# =========================
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+
+# =========================
+# ML / CV model files
+# =========================
+*.pt
+*.pth
+*.onnx
+*.engine
+*.weights
+*.h5
+
+# =========================
+# Dataset / output folders
+# =========================
+runs/
+outputs/
+results/
+logs/
+datasets/
+data/raw/
+data/raw_videos/
+data/extracted_frames/
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/

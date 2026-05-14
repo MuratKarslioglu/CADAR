@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# System
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Large data files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.zip
+*.tar
+*.tar.gz
+
+# ML model weights
+*.pt
+*.pth
+*.onnx
+*.engine
+*.weights
+
+# YOLO / training outputs
+runs/
+wandb/
+logs/
+
+# Dataset raw files
+data/raw_videos/
+data/extracted_frames/
+datasets/*/images/
+datasets/*/labels/
+
+# Temporary files
+tmp/
+temp/
+cache/
+

@@ -1,0 +1,23 @@
+{
+  "params": {
+    "hsv_low": [
+      152,
+      145,
+      30
+    ],
+    "hsv_high": [
+      179,
+      255,
+      242
+    ],
+    "blur": 15,
+    "canny": [
+      100,
+      200
+    ],
+    "kernel": 5,
+    "iters": 1,
+    "use_close": true
+  },
+  "view_mode": 3
+}

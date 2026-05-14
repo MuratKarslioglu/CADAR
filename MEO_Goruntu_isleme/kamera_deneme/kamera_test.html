@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kamera Testi</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 2rem;
+    }
+    video {
+      width: 100%;max-width: 400px;
+      margin-top: 1rem;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    #status {
+      margin-top: 1rem;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>📸 Kamera Testi</h1>
+  <p>Kamera izni isteyecektir. Eğer görüntü gelmiyorsa, HTTPS gereklidir.</p>
+  <video id="video" autoplay playsinline></video>
+  <p id="status">Durum: bekleniyor...</p>
+
+  <script>
+    const video = document.getElementById('video');
+    const status = document.getElementById('status');
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        status.textContent = '✅ Kamera erişimi başarılı!';
+      } catch (err) {
+        status.textContent = '❌ Kamera erişimi başarısız: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    startCamera();
+  </script>
+</body>
+</html>
