@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import uuid
 import threading
@@ -7,10 +6,9 @@ import queue
 import re
 import cv2
 import logging
-import time
 from datetime import datetime
 from aiohttp import web
-from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
+from aiortc import RTCPeerConnection, RTCSessionDescription
 
 # ===========================
 # 1. AYARLAR
@@ -28,23 +26,24 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 # Tek bir işçi (thread) buradaki işleri sırayla alıp diske yazar.
 SAVE_QUEUE = queue.Queue()
 
+
 def global_save_worker():
     """
     Arka planda sürekli çalışır. Kuyruğa bir video paketi düştüğünde
     onu alır ve diske yazar. İşlem bitmeden diğerine geçmez.
     """
     print("⚙️ Disk Yazma İşçisi Hazır (Sıralı Kayıt Modu)")
-    
+
     while True:
         # Kuyruktan iş bekle (Bloklayıcı)
         job = SAVE_QUEUE.get()
-        
+
         filepath = job['filepath']
         frames = job['frames']
         width = job['width']
         height = job['height']
         fps = job['fps']
-        
+
         print(f"\n💾 DİSK YAZMA BAŞLADI: {filepath}")
         print(f"   📦 Toplam Kare: {len(frames)} | Kuyrukta Bekleyen: {SAVE_QUEUE.qsize()}")
 
@@ -52,7 +51,7 @@ def global_save_worker():
             # Video Writer oluştur
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             writer = cv2.VideoWriter(filepath, fourcc, fps, (width, height))
-            
+
             frame_counter = 0
             total_frames = len(frames)
 
@@ -60,25 +59,26 @@ def global_save_worker():
                 # Gerekirse resize (Güvenlik)
                 if frame.shape[1] != width or frame.shape[0] != height:
                     frame = cv2.resize(frame, (width, height))
-                
+
                 writer.write(frame)
                 frame_counter += 1
-                
+
                 # İlerleme çubuğu gibi her %10'da bir nokta bas
                 if frame_counter % (total_frames // 10 + 1) == 0:
                     print("#", end="", flush=True)
 
             writer.release()
             print(f"\n✅ DİSK YAZMA BİTTİ: {filepath}")
-            
+
             # RAM'i temizle (Python Garbage Collector'a yardım et)
             del frames
-            
+
         except Exception as e:
             print(f"❌ KAYIT HATASI: {e}")
-        
+
         # Kuyruğa işin bittiğini bildir
         SAVE_QUEUE.task_done()
+
 
 # İşçiyi başlat (Daemon: Ana program kapanınca bu da kapanır)
 threading.Thread(target=global_save_worker, daemon=True).start()
@@ -92,17 +92,17 @@ class InMemoryTrack:
         self.track = track
         self.client_id = client_id
         self.safe_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', client_id)
-        
+
         # --- RAM BUFFER ---
-        self.frames_buffer = [] # Görüntüler burada birikecek (RAM)
+        self.frames_buffer = []  # Görüntüler burada birikecek (RAM)
         self.is_recording = False
-        self.task = asyncio.create_task(self.consume_frames()) 
+        self.task = asyncio.create_task(self.consume_frames())
 
     async def consume_frames(self):
         while True:
             try:
                 frame = await self.track.recv()
-                
+
                 # Eğer kayıt başladıysa RAM listesine ekle
                 if self.is_recording:
                     try:
@@ -110,14 +110,14 @@ class InMemoryTrack:
                         img = frame.to_ndarray(format="bgr24")
                         self.frames_buffer.append(img)
                     except Exception:
-                        pass 
+                        pass
             except Exception:
                 break
 
     def start_recording(self):
         if self.is_recording:
-            return 
-        
+            return
+
         # Listeyi sıfırla
         self.frames_buffer = []
         self.is_recording = True
@@ -129,7 +129,7 @@ class InMemoryTrack:
 
         self.is_recording = False
         captured_count = len(self.frames_buffer)
-        
+
         print(f"   ⏹️ RAM KAYDI DURDU: {self.client_id} | Toplanan Kare: {captured_count}")
 
         if captured_count > 0:
@@ -137,26 +137,26 @@ class InMemoryTrack:
             # Son karenin boyutlarını al (Referans olarak)
             last_frame = self.frames_buffer[-1]
             h, w = last_frame.shape[:2]
-            
+
             # Çift sayı kuralı (MP4 için)
             safe_w = w if w % 2 == 0 else w - 1
             safe_h = h if h % 2 == 0 else h - 1
-            
+
             filename = f"{self.safe_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
             filepath = os.path.join(VIDEO_DIR, filename)
 
             # GLOBAL KUYRUĞA GÖNDER
             job_package = {
                 "filepath": filepath,
-                "frames": self.frames_buffer, # DİKKAT: RAM'deki listeyi gönderiyoruz
+                "frames": self.frames_buffer,  # DİKKAT: RAM'deki listeyi gönderiyoruz
                 "width": safe_w,
                 "height": safe_h,
                 "fps": 30.0
             }
-            
+
             SAVE_QUEUE.put(job_package)
             print(f"   ⏳ KUYRUĞA EKLENDİ: {self.client_id} -> Sırasını bekliyor...")
-            
+
             # Listeyi burada sıfırlamıyoruz! Worker işini bitirince silecek.
             # self.frames_buffer = [] # BURADA SİLME!
         else:
@@ -165,15 +165,17 @@ class InMemoryTrack:
 # ===========================
 # 4. SERVER YÖNETİMİ
 # ===========================
+
+
 class MediaServer:
     def __init__(self):
         self.pcs = set()
-        self.device_tracks = {} 
+        self.device_tracks = {}
 
     async def handle_offer(self, request):
         params = await request.json()
         raw_id = params.get("client_id", str(uuid.uuid4()))
-        
+
         offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
         pc = RTCPeerConnection()
         self.pcs.add(pc)
@@ -219,7 +221,7 @@ class MediaServer:
         print("\n🚀 START: RAM'e Kayıt Başlıyor...")
         count = 0
         if not self.device_tracks:
-             return web.json_response({"status": "failed"})
+            return web.json_response({"status": "failed"})
 
         for track in self.device_tracks.values():
             track.start_recording()
@@ -230,7 +232,7 @@ class MediaServer:
         print("\n🛑 STOP: Kayıt Bitti -> Disk Yazma Kuyruğuna Aktarılıyor...")
         for track in self.device_tracks.values():
             track.stop_recording()
-        
+
         # Kullanıcıya hemen cevap dönüyoruz, arka planda yazma devam ediyor
         return web.json_response({"status": "queued", "message": "Videolar sırayla diske yazılıyor..."})
 
@@ -240,15 +242,17 @@ class MediaServer:
 
     async def download_video(self, request):
         name = request.match_info.get('name', request.rel_url.query.get("file"))
-        if not name: return web.Response(status=400, text="Eksik isim")
-        
+        if not name:
+            return web.Response(status=400, text="Eksik isim")
+
         name = os.path.basename(name)
         path = os.path.join(VIDEO_DIR, name)
-        
+
         print(f"💻 İndirme İsteği: {name}")
         if os.path.exists(path):
             return web.FileResponse(path)
         return web.Response(status=404, text="Bulunamadı (Henüz yazılıyor olabilir)")
+
 
 def main():
     app = web.Application()
@@ -268,6 +272,7 @@ def main():
     print("⚠️ Uzun süreli kayıtlarda RAM dolabilir!")
     print("---------------------------------------------------")
     web.run_app(app, host="0.0.0.0", port=8080, access_log=None)
+
 
 if __name__ == "__main__":
     main()

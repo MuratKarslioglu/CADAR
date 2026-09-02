@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import uuid
 import threading
@@ -9,7 +8,7 @@ import cv2
 import logging
 from datetime import datetime
 from aiohttp import web
-from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
+from aiortc import RTCPeerConnection, RTCSessionDescription
 
 # ===========================
 # 1. AYARLAR
@@ -23,17 +22,19 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 # ===========================
 # 2. HD (1280x720) ZORLAMALI KAYDEDİCİ
 # ===========================
+
+
 class AsyncVideoWriter:
     def __init__(self, filepath):
         self.filepath = filepath
-        self.queue = queue.Queue(maxsize=60) 
+        self.queue = queue.Queue(maxsize=60)
         self.running = True
-        self.writer = None 
+        self.writer = None
         self.frame_count = 0
         self.dropped_frames = 0
         self.target_width = 0
         self.target_height = 0
-        
+
         self.thread = threading.Thread(target=self._worker, daemon=True)
         self.thread.start()
 
@@ -48,7 +49,7 @@ class AsyncVideoWriter:
                 self.queue.get_nowait()
                 self.queue.put_nowait(frame_bgr)
                 self.dropped_frames += 1
-            except:
+            except Exception as e:
                 pass
 
     def stop(self):
@@ -67,33 +68,33 @@ class AsyncVideoWriter:
                 if not self.running:
                     break
                 continue
-            
+
             # Gelen ham görüntü boyutu
             h, w = frame.shape[:2]
 
             # --- INIT ---
             if self.writer is None:
                 # İstersen burayı 1920 / 1080 yapabilirsin artık
-                safe_w = 1280 
+                safe_w = 1280
                 safe_h = 720
-                
+
                 self.target_width = safe_w
                 self.target_height = safe_h
-                
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
+
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                 self.writer = cv2.VideoWriter(self.filepath, fourcc, 30.0, (safe_w, safe_h))
-                
-                print("\n" + "="*50)
-                print(f"🎬 KAYIT BAŞLATILDI")
+
+                print("\n" + "=" * 50)
+                print("🎬 KAYIT BAŞLATILDI")
                 print(f"📡 Telefondan Gelen Ham Boyut: {w}x{h}")
                 print(f"💾 Diske Yazılan Boyut:       {safe_w}x{safe_h}")
-                
+
                 if w < 1280:
                     print("⚠️ UYARI: Görüntü hala düşük çözünürlüklü geliyor!")
                     print("👉 Flutter tarafındaki 'min' constraint ayarını kontrol et.")
                 else:
                     print("✅ KALİTE ONAYLANDI: Yüksek Çözünürlük Alınıyor.")
-                print("="*50 + "\n")
+                print("=" * 50 + "\n")
 
             # --- YAZMA ---
             if self.writer is not None:
@@ -101,45 +102,31 @@ class AsyncVideoWriter:
                     try:
                         # İnterpolasyon (Cubic) kullanarak daha net resize yapıyoruz
                         frame = cv2.resize(frame, (self.target_width, self.target_height), interpolation=cv2.INTER_CUBIC)
-                    except:
-                        continue
-                
-                self.writer.write(frame)
-                self.frame_count += 1
-                
-                if self.frame_count % 60 == 0:
-                    print(".", end="", flush=True)
-            
-            self.queue.task_done()
-            # --- YAZMA İŞLEMİ (Girintiye Dikkat!) ---
-            if self.writer is not None:
-                # Eğer gelen kare boyutu 1280x720 değilse, uydurmak için resize et
-                if (w != self.target_width) or (h != self.target_height):
-                    try:
-                        frame = cv2.resize(frame, (self.target_width, self.target_height))
                     except Exception as e:
                         print(f"[HATA] Resize Başarısız: {e}")
                         continue
-                
+
                 self.writer.write(frame)
                 self.frame_count += 1
-                
+
                 # Her 60 karede bir nokta koy (Çalıştığını görelim)
                 if self.frame_count % 60 == 0:
                     print(".", end="", flush=True)
-            
+
             self.queue.task_done()
 
 # ===========================
 # 3. STREAM TRACK
 # ===========================
+
+
 class DeviceTrack:
     def __init__(self, track, client_id):
         self.track = track
         self.client_id = client_id
         self.safe_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', client_id)
         self.recorder = None
-        self.task = asyncio.create_task(self.consume_frames()) 
+        self.task = asyncio.create_task(self.consume_frames())
 
     async def consume_frames(self):
         while True:
@@ -149,15 +136,15 @@ class DeviceTrack:
                     try:
                         img = frame.to_ndarray(format="bgr24")
                         self.recorder.write_frame(img)
-                    except Exception:
-                        pass 
-            except Exception:
+                    except Exception as e:
+                        pass
+            except Exception as e:
                 break
 
     def start_recording(self):
         if self.recorder and self.recorder.running:
-            return 
-        
+            return
+
         filename = f"{self.safe_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
         path = os.path.join(VIDEO_DIR, filename)
         self.recorder = AsyncVideoWriter(path)
@@ -171,15 +158,17 @@ class DeviceTrack:
 # ===========================
 # 4. SERVER YÖNETİMİ
 # ===========================
+
+
 class MediaServer:
     def __init__(self):
         self.pcs = set()
-        self.device_tracks = {} 
+        self.device_tracks = {}
 
     async def handle_offer(self, request):
         params = await request.json()
         raw_id = params.get("client_id", str(uuid.uuid4()))
-        
+
         offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
         pc = RTCPeerConnection()
         self.pcs.add(pc)
@@ -217,17 +206,17 @@ class MediaServer:
         return web.Response(status=200)
 
     async def handle_main_pc_connect(self, request):
-        print("\n" + "="*40)
+        print("\n" + "=" * 40)
         print("💻 MAIN PC BAĞLANDI")
-        print("="*40 + "\n")
+        print("=" * 40 + "\n")
         return web.Response(text="OK")
 
     async def start_record(self, request):
         print("\n💻 START Komutu.")
         count = 0
         if not self.device_tracks:
-             print("⚠️ Cihaz yok!")
-             return web.json_response({"status": "failed"})
+            print("⚠️ Cihaz yok!")
+            return web.json_response({"status": "failed"})
 
         for track in self.device_tracks.values():
             track.start_recording()
@@ -246,15 +235,17 @@ class MediaServer:
 
     async def download_video(self, request):
         name = request.match_info.get('name', request.rel_url.query.get("file"))
-        if not name: return web.Response(status=400, text="Eksik isim")
-        
+        if not name:
+            return web.Response(status=400, text="Eksik isim")
+
         name = os.path.basename(name)
         path = os.path.join(VIDEO_DIR, name)
-        
+
         print(f"💻 İndirme: {name}")
         if os.path.exists(path):
             return web.FileResponse(path)
         return web.Response(status=404, text="Bulunamadı")
+
 
 def main():
     app = web.Application()
@@ -272,6 +263,7 @@ def main():
     print("\n🚀 SERVER HAZIR (FIXED 1280x720) - http://0.0.0.0:8080")
     print("---------------------------------------------------")
     web.run_app(app, host="0.0.0.0", port=8080, access_log=None)
+
 
 if __name__ == "__main__":
     main()
